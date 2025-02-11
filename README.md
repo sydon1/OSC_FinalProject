@@ -1,4 +1,4 @@
-This is the final project made for my operating systems course. It was made after several introductory labs introducing C.
+This is the final project made for my operating systems course. It was made after several introductory labs introducing C.  
 Grade: 17/20
 ## **Project Overview**
 A multi-threaded sensor monitoring system that collects temperature data from multiple sensor nodes via TCP. The system includes a central gateway that processes incoming sensor data through three main components:
