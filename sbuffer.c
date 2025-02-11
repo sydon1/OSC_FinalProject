@@ -1,7 +1,6 @@
 //
-// Created by sodir on 12/25/24.
+// Created by sodir on 12/9/24.
 //
-
 #include "sbuffer.h"
 #include "config.h"
 
@@ -66,15 +65,15 @@ int sbuffer_free(sbuffer_t **buffer) {
 
 int sbuffer_insert(sbuffer_t *buffer, sensor_data_t *data) {
     if (buffer == NULL) return SBUFFER_FAILURE;
+    pthread_mutex_lock(&bufferMutex);
 
     sbuffer_node_t *node = malloc(sizeof(sbuffer_node_t));
     if (node == NULL) return SBUFFER_FAILURE;
 
     node->data = *data;
     node->next = NULL;
-    node->processed_stages = 0;
+    node->processed_stages = 0; //set stages, better than enums
 
-    pthread_mutex_lock(&bufferMutex);
 
     if (buffer->tail == NULL) {
         buffer->head = buffer->tail = node;
@@ -105,18 +104,16 @@ int sbuffer_read(sbuffer_t *buffer, sensor_data_t *data, int stage_id) {
             return SBUFFER_NO_DATA;
         }
 
-        // Wait if this stage already processed the current node
+        //check if node already processed
         int stage_bit = (1 << (stage_id - 1));
         if (buffer->head->processed_stages & stage_bit) {
             pthread_cond_wait(&dataAvailable, &bufferMutex);
             continue;
         }
 
-        // Read data and mark stage as processed
         *data = buffer->head->data;
         buffer->head->processed_stages |= stage_bit;
 
-        // Signal completion of stage
         pthread_cond_signal(&stageComplete);
         pthread_mutex_unlock(&bufferMutex);
         return SBUFFER_SUCCESS;
@@ -141,5 +138,15 @@ int sbuffer_remove(sbuffer_t *buffer, sensor_data_t *data) {
     free(temp);
     pthread_mutex_unlock(&bufferMutex);
 
-    return buffer->head == NULL ? SBUFFER_NO_DATA : SBUFFER_SUCCESS;
+    return buffer->head == NULL? SBUFFER_NO_DATA : SBUFFER_SUCCESS;
+}
+
+bool sbuffer_is_empty(sbuffer_t *buffer) {
+    if (!buffer) return true;
+
+    pthread_mutex_lock(&bufferMutex);
+    bool is_empty = (buffer->head == NULL);
+    pthread_mutex_unlock(&bufferMutex);
+
+    return is_empty;
 }

@@ -14,7 +14,7 @@
 #define    TCP_SOCKOP_ERROR         3   // socket operator (socket, listen, bind, accept,...) error
 #define    TCP_CONNECTION_CLOSED    4   // send/receive indicate connection is closed
 #define    TCP_MEMORY_ERROR         5   // mem alloc error
-#define    TCP_TIMEOUT_ERROR        6   // timeout err
+#define    TCP_TIMEOUT_ERROR        6
 
 #define MAX_PENDING 10
 
@@ -96,13 +96,13 @@ int tcp_send(tcpsock_t *socket, void *buffer, int *buf_size);
  * \return TCP_NO_ERROR if no error occurs during execution
  */
 int tcp_receive(tcpsock_t *socket, void *buffer, int *buf_size);
-/*
- *Same function as before, but with an added timeout functionality.
- *inspiration from https://stackoverflow.com/questions/67882330/socket-timeout-select-vs-setsockopt and
- *https://stackoverflow.com/questions/36913075/tcp-socket-timeout-or-no-data-to-read/36913150#36913150
- *to choose for setsockopt to handle timeout.
+
+/**
+ * Same as tcp_receive but with timeout functionality
+ * Returns TCP_CONNECTION_TIMEOUT if timeout occurs
+ * @param timeout_sec Timeout in seconds
  */
-int tcp_receive_timeout(tcpsock_t *socket, void *buffer, int *buf_size, int timeout_sec);
+int tcp_receive_with_timeout(tcpsock_t *socket, void *buffer, int *buf_size, int timeout_sec);
 
 /**
  * Set '*ip_addr' to the IP address of 'socket' (could be NULL if the IP address is not set)

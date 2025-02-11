@@ -65,3 +65,15 @@ run : sensor_gateway sensor_node
 
 zip:
 	zip lab_final.zip main.c connmgr.c connmgr.h datamgr.c datamgr.h sbuffer.c sbuffer.h sensor_db.c sensor_db.h config.h lib/dplist.c lib/dplist.h lib/tcpsock.c lib/tcpsock.h Makefile
+
+all-strict:
+	@echo "$(TITLE_COLOR)\n***** COMPILING ALL TARGETS WITH STRICT CHECKS *****$(NO_COLOR)"
+	gcc -c main.c      -Wall -Wextra -Werror -std=c11 -g -pedantic -DSET_MIN_TEMP=10 -DSET_MAX_TEMP=20 -DTIMEOUT=5 -o main.o
+	gcc -c connmgr.c   -Wall -Wextra -Werror -std=c11 -g -pedantic -DSET_MIN_TEMP=10 -DSET_MAX_TEMP=20 -DTIMEOUT=5 -o connmgr.o
+	gcc -c datamgr.c   -Wall -Wextra -Werror -std=c11 -g -pedantic -DSET_MIN_TEMP=10 -DSET_MAX_TEMP=20 -DTIMEOUT=5 -o datamgr.o
+	gcc -c sensor_db.c -Wall -Wextra -Werror -std=c11 -g -pedantic -DSET_MIN_TEMP=10 -DSET_MAX_TEMP=20 -DTIMEOUT=5 -o sensor_db.o
+	gcc -c sbuffer.c   -Wall -Wextra -Werror -std=c11 -g -pedantic -DSET_MIN_TEMP=10 -DSET_MAX_TEMP=20 -DTIMEOUT=5 -o sbuffer.o
+	gcc main.o connmgr.o datamgr.o sensor_db.o sbuffer.o -ldplist -ltcpsock -lpthread -o sensor_gateway -Wall -L./lib -Wl,-rpath=./lib
+
+	gcc -c sensor_node.c -Wall -Wextra -Werror -std=c11 -g -pedantic -o sensor_node.o
+	gcc sensor_node.o -ltcpsock -o sensor_node -Wall -L./lib -Wl,-rpath=./lib

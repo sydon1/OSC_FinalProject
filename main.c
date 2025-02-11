@@ -1,5 +1,5 @@
 //
-// Created by sodir on 12/25/24.
+// Created by sodir on 12/9/24.
 //
 #include <errno.h>
 #include <stdio.h>
@@ -15,17 +15,39 @@
 #include "datamgr.h"
 #include "sensor_db.h"
 
-
 int fd[2];
 pid_t pid;
 FILE *log_file = NULL;
 int log_sequence = 0;
+// https://stackoverflow.com/questions/14320041/pthread-mutex-initializer-vs-pthread-mutex-init-mutex-param
+// while debugging I landed on this form of init. Cleaner in a big file imo.
 pthread_mutex_t pipemutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t shutdown_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t shutdown_complete;
+int active_threads = 0;
+
+void increment_active_threads() {
+    pthread_mutex_lock(&shutdown_mutex);
+    active_threads++;
+    pthread_mutex_unlock(&shutdown_mutex);
+}
+
+void decrement_active_threads() {
+    pthread_mutex_lock(&shutdown_mutex);
+    active_threads--;
+    if (active_threads == 0) {
+        pthread_cond_signal(&shutdown_complete);
+    }
+    pthread_mutex_unlock(&shutdown_mutex);
+}
 
 int main(int argc, char *argv[]) {
-    // Argument validation
     if (argc != 3) {
         printf("Wrong number of arguments\nUsage: %s <port> <max_connections>\n", argv[0]);
+        return -1;
+    }
+    if (pthread_cond_init(&shutdown_complete, NULL) != 0) {
+        printf("Failed to initialize condition variable\n");
         return -1;
     }
 
@@ -37,14 +59,12 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    // Initialize logging
     if (create_log_process() != 0) {
         printf("Failed to create logging process\n");
         return -1;
     }
     write_to_log_process("Started the gateway");
 
-    // Initialize buffer
     sbuffer_t *shared_buffer = NULL;
     if (sbuffer_init(&shared_buffer) != SBUFFER_SUCCESS) {
         write_to_log_process("Failed to initialize shared buffer");
@@ -52,10 +72,9 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    // Parameter initialization
-    connmgr_args_t *conn_params = malloc(sizeof(connmgr_args_t));
-    datamgr_args_t *data_params = malloc(sizeof(datamgr_args_t));
-    storage_args_t *storage_params = malloc(sizeof(storage_args_t));
+    connection_manager_arguments_t *conn_params = malloc(sizeof(connection_manager_arguments_t));
+    datamanager_arguments_t *data_params = malloc(sizeof(datamanager_arguments_t));
+    storagemanager_arguments_t *storage_params = malloc(sizeof(storagemanager_arguments_t));
 
     if (!conn_params || !data_params || !storage_params) {
         write_to_log_process("Failed to allocate thread parameters");
@@ -67,30 +86,25 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    // Initialize parameters
+    //shared param setup
     conn_params->port = tcp_port;
     conn_params->max_con = max_conn;
-    conn_params->buffer = shared_buffer;
-    data_params->buffer = shared_buffer;
-    storage_params->buffer = shared_buffer;
+    conn_params->sBuffer = shared_buffer;
+    data_params->sBuffer = shared_buffer;
+    storage_params->sBuffer = shared_buffer;
 
-    // Debug log
-    char debug_msg[128];
-    snprintf(debug_msg, sizeof(debug_msg),
-             "Initializing with port %d and max connections %d",
-             tcp_port, max_conn);
-    write_to_log_process(debug_msg);
+    char log_message[300];
+    snprintf(log_message, sizeof(log_message), "Initializing with port %d and max connections %d", tcp_port, max_conn);
+    write_to_log_process(log_message);
 
-    // Thread creation
     pthread_t connmgr_thread, datamgr_thread, storagemgr_thread;
-    int thread_create_error = 0;
+    increment_active_threads(); // connection manager
+    increment_active_threads(); // data manager
+    increment_active_threads(); // storage manager
 
-    // Create threads with error checking
-    thread_create_error |= pthread_create(&connmgr_thread, NULL, connection_manager, conn_params);
-    thread_create_error |= pthread_create(&datamgr_thread, NULL, data_manager, data_params);
-    thread_create_error |= pthread_create(&storagemgr_thread, NULL, storage_manager, storage_params);
-
-    if (thread_create_error != 0) {
+    if (pthread_create(&connmgr_thread, NULL, connection_manager, conn_params) != 0 ||
+        pthread_create(&datamgr_thread, NULL, data_manager, data_params) != 0 ||
+        pthread_create(&storagemgr_thread, NULL, storage_manager, storage_params) != 0) {
         write_to_log_process("Failed to create one or more threads");
         free(conn_params);
         free(data_params);
@@ -100,15 +114,24 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    // Wait for threads in the correct order
     pthread_join(connmgr_thread, NULL);
     write_to_log_process("Connection manager thread completed");
+    decrement_active_threads();
 
     pthread_join(datamgr_thread, NULL);
     write_to_log_process("Data manager thread completed");
+    decrement_active_threads();
 
     pthread_join(storagemgr_thread, NULL);
     write_to_log_process("Storage manager thread completed");
+    decrement_active_threads();
+
+    // Wait for all threads to complete cleanly
+    pthread_mutex_lock(&shutdown_mutex);
+    while (active_threads > 0) {
+        pthread_cond_wait(&shutdown_complete, &shutdown_mutex);
+    }
+    pthread_mutex_unlock(&shutdown_mutex);
 
     // Final cleanup
     write_to_log_process("Gateway shutting down");
@@ -118,16 +141,20 @@ int main(int argc, char *argv[]) {
     sbuffer_free(&shared_buffer);
     end_log_process();
 
+    pthread_mutex_destroy(&shutdown_mutex);
+    pthread_cond_destroy(&shutdown_complete);
+
     return 0;
 }
 
+// Logging process functions
 void run_logging_process(void) {
     char buffer;
     char message[LOG_MSG_MAX_LEN] = {0};
     int msg_pos = 0;
     time_t now;
 
-    log_file = fopen(LOG_FILE, "w");  // Changed to "w" to create new log each time
+    log_file = fopen(LOG_FILE, "w");
     if (log_file == NULL) {
         perror("Failed to open log file");
         exit(EXIT_FAILURE);
@@ -151,13 +178,8 @@ void run_logging_process(void) {
         }
     }
 
-    if (errno != 0) {
-        perror("Error reading from pipe");
-    }
-
     fclose(log_file);
     close(fd[0]);
-    exit(EXIT_SUCCESS);
 }
 
 int create_log_process(void) {
@@ -175,54 +197,30 @@ int create_log_process(void) {
     }
 
     if (pid > 0) {
-        close(fd[0]);
-    }
-    else {
-        close(fd[1]);
+        close(fd[0]);  // Parent closes read end
+    } else {
+        close(fd[1]);  // Child closes write end
         run_logging_process();
+        exit(EXIT_SUCCESS);
     }
     return SUCCESS;
 }
 
 int write_to_log_process(char *msg) {
-    if (msg == NULL) {
-        return ERR_FILE_IO;
-    }
-    int result = ERR_FILE_IO;
+    if (msg == NULL) return ERR_FILE_IO;
 
-    if (pthread_mutex_lock(&pipemutex) != 0) {
-        perror("Mutex lock failed");
-        return ERR_FILE_IO;
-    }
-
+    pthread_mutex_lock(&pipemutex);
     ssize_t bytes = write(fd[1], msg, strlen(msg) + 1);
-    if (bytes > 0) {
-        result = SUCCESS;
-    } else {
-        perror("Write to pipe failed");
-    }
+    pthread_mutex_unlock(&pipemutex);
 
-    if (pthread_mutex_unlock(&pipemutex) != 0) {
-        perror("Mutex unlock failed");
-        return ERR_FILE_IO;
-    }
-    return result;
+    return (bytes > 0) ? SUCCESS : ERR_FILE_IO;
 }
 
 int end_log_process(void) {
     if (pid > 0) {
-        if (close(fd[1]) == -1) {
-            perror("Close pipe failed");
-            return ERR_PIPE;
-        }
+        close(fd[1]);
         wait(NULL);
-
-        if (pthread_mutex_destroy(&pipemutex) != 0) {
-            perror("Mutex destruction failed");
-            return ERR_MEMORY;
-        }
-
-        return SUCCESS;
+        pthread_mutex_destroy(&pipemutex);
     }
     return SUCCESS;
 }

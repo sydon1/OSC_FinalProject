@@ -1,9 +1,10 @@
 //
-// Created by sodir on 12/25/24.
+// Created by sodir on 12/17/24.
 //
 
 #ifndef SBUFFER_H
 #define SBUFFER_H
+
 #include "config.h"
 
 #define SBUFFER_FAILURE -1
@@ -51,4 +52,11 @@ int sbuffer_insert(sbuffer_t *buffer, sensor_data_t *data);
  * @return SBUFFER_SUCCESS on success, SBUFFER_FAILURE on error, SBUFFER_NO_DATA if buffer is empty
  */
 int sbuffer_read(sbuffer_t *buffer, sensor_data_t *data, int stage_id);
+
+/**
+ * Check if buffer is fully processed and ready for shutdown
+ * \param buffer a pointer to the buffer
+ * \return true if buffer is ready for shutdown
+ */
+bool sbuffer_is_empty(sbuffer_t *buffer);
 #endif //SBUFFER_H

@@ -1,5 +1,5 @@
 //
-// Created by sodir on 12/25/24.
+// Created by sodir on 12/17/24.
 //
 
 #ifndef DATAMGR_H
@@ -19,32 +19,57 @@
                       }                                             \
                     } while(0)
 
-void *element_copy(void *element);
-void element_free(void **element);
-int element_compare(void *x, void *y);
-
-typedef struct {
- sbuffer_t *buffer;
-} datamgr_args_t;
-
-typedef struct {
- sensor_id_t sensor_id;
- uint16_t room_id;
- double running_avg[RUN_AVG_LENGTH];
- int current_idx;
- time_t last_modified;
-} sensor_data_elem_t;
+/**
+ * Main data management thread function
+ *
+ * Responsible for initializing the sensor list, parsing sensor mappings,
+ * and continuously processing incoming sensor data from a shared buffer.
+ *
+ * @param args Thread arguments containing the shared sensor data buffer
+ * @return NULL on completion or error
+ */
 
 void *data_manager(void *args);
-int parse_sensor_map(dplist_t *list);
-void process_sensor_data(dplist_t *list, sensor_data_t *data);
-void check_sensor_limits(sensor_data_elem_t *sensor);
 
+/**
+ * Parses the sensor mapping file and populates the sensor list
+ *
+ * Reads the room-sensor mappings from the predefined MAP_FILE,
+ * creating sensor data elements and inserting them into the provided list.
+ *
+ * @param list Pointer to the dynamic sensor list to be populated
+ * @return 0 on success, -1 on file open or parsing error
+ */
+
+int parse_sensor_map(dplist_t *list);
+
+/**
+ * Processes incoming sensor data
+ *
+ * Finds the corresponding sensor in the list, updates its running average,
+ * and checks if the sensor's temperature is within acceptable limits.
+ *
+ * @param list Pointer to the sensor data list
+ * @param data Pointer to the incoming sensor data
+ */
+
+void process_sensor_data(dplist_t *list, sensor_data_t *data);
+
+/**
+ * Checks if a sensor's temperature is within acceptable limits
+ *
+ * Calculates the running average temperature and logs a message
+ * if the temperature is too hot or too cold.
+ *
+ * @param sensor Pointer to the sensor data element to check
+ */
+
+void check_sensor_limits(sensor_data_element_t *sensor);
 /**
  * This method should be called to clean up the datamgr, and to free all used memory.
  * After this, any call to datamgr_get_room_id, datamgr_get_avg, datamgr_get_last_modified or datamgr_get_total_sensors will not return a valid result
  */
-void datamgr_free();
+void datamgr_cleanup(dplist_t *list);
 
 /**
  * Gets the room ID for a certain sensor ID
@@ -75,5 +100,10 @@ time_t datamgr_get_last_modified(sensor_id_t sensor_id);
  *  \return the total amount of sensors
  */
 int datamgr_get_total_sensors();
+
+//element functions
+void *element_copy(void *element);
+void element_free(void **element);
+int element_compare(void *x, void *y);
 
 #endif //DATAMGR_H

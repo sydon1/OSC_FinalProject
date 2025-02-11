@@ -218,7 +218,10 @@ int tcp_receive(tcpsock_t *socket, void *buffer, int *buf_size) {
     return TCP_NO_ERROR;
 }
 
-int tcp_receive_timeout(tcpsock_t *socket, void *buffer, int *buf_size, int timeout_sec) {
+int tcp_receive_with_timeout(tcpsock_t *socket, void *buffer, int *buf_size, int timeout_sec) {
+    //inspiration from https://stackoverflow.com/questions/67882330/socket-timeout-select-vs-setsockopt and
+    //https://stackoverflow.com/questions/36913075/tcp-socket-timeout-or-no-data-to-read/36913150#36913150
+    //to choose for setsockopt to handle timeout.
     struct timeval timeout;
     timeout.tv_sec = timeout_sec;
     timeout.tv_usec = 0;
@@ -231,10 +234,6 @@ int tcp_receive_timeout(tcpsock_t *socket, void *buffer, int *buf_size, int time
         return TCP_NO_ERROR;
     }
     *buf_size = recv(socket->sd, buffer, *buf_size, 0);
-    TCP_DEBUG_PRINTF(*buf_size == 0, "Recv() : no connection to peer\n");
-    TCP_ERR_HANDLER((*buf_size < 0) && (errno == EAGAIN), return TCP_TIMEOUT_ERROR);
-    TCP_ERR_HANDLER((*buf_size < 0) && (errno == EWOULDBLOCK), return TCP_TIMEOUT_ERROR);
-    TCP_ERR_HANDLER(*buf_size == EWOULDBLOCK, return TCP_TIMEOUT_ERROR);
     TCP_ERR_HANDLER(*buf_size == 0, return TCP_CONNECTION_CLOSED);
     TCP_DEBUG_PRINTF((*buf_size < 0) && (errno == ENOTCONN), "Recv() : no connection to peer\n");
     TCP_ERR_HANDLER((*buf_size < 0) && (errno == ENOTCONN), return TCP_CONNECTION_CLOSED);

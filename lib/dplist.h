@@ -4,7 +4,6 @@
 
 #ifndef _DPLIST_H_
 #define _DPLIST_H_
-
 #include <stdbool.h>
 
 /**

@@ -1,26 +1,16 @@
 //
-// Created by sodir on 12/25/24.
+// Created by sodir on 12/9/24.
 //
-
 #include "sensor_db.h"
-#include "sensor_db.h"
-
-#include <stdbool.h>
 #include <stdio.h>
-
 #include "config.h"
 #include "sbuffer.h"
-
-
-#include "sensor_db.h"
 #include <string.h>
 
 void *storage_manager(void *args) {
-    storage_args_t *params = (storage_args_t*)args;
+    storagemanager_arguments_t *params = (storagemanager_arguments_t*)args; //explicit casting
     sensor_data_t data;
-    char log_message[128];
 
-    // Open database file
     FILE *fp = open_db("data.csv");
     if (!fp) {
         write_to_log_process("Failed to open data file");
@@ -29,9 +19,9 @@ void *storage_manager(void *args) {
 
     write_to_log_process("A new data.csv file has been created.");
 
-    // Process data from buffer
+    // process data from buffer
     while (1) {
-        int result = sbuffer_read(params->buffer, &data, 2);  // Stage 2 = storage manager
+        int result = sbuffer_read(params->sBuffer, &data, 2);  // stage 2 = storage manager
 
         if (result == SBUFFER_NO_DATA) {
             break;  // End marker received
@@ -39,26 +29,28 @@ void *storage_manager(void *args) {
 
         if (result == SBUFFER_SUCCESS) {
             if (write_sensor_data(fp, &data) == 0) {
-                snprintf(log_message, sizeof(log_message),
-                        "Data insertion from sensor %d succeeded", data.id);
-                write_to_log_process(log_message);
+                char log[300];
+                snprintf(log, sizeof(log), "Data insertion from sensor %d succeeded", data.id);
+                write_to_log_process(log);
             } else {
                 write_to_log_process("Failed to write sensor data");
             }
         }
 
-        // After successfully reading and writing, remove from buffer
-        sbuffer_remove(params->buffer, &data);
+        //remove from buffer after reading/writing
+        sbuffer_remove(params->sBuffer, &data);
     }
-
-    // Cleanup
     close_db(fp);
     write_to_log_process("Storage manager shutting down");
     return NULL;
 }
 
-FILE *open_db(const char *filename) {
-    FILE *fp = fopen(filename, "w");  // Create new file or truncate existing
+FILE *open_db(char *filename) {
+  	if(filename == NULL) {
+    	write_to_log_process("db filename is invalid");
+    	return NULL;
+  	}
+    FILE *fp = fopen(filename, "a");
     if (!fp) {
         write_to_log_process("Could not open data file");
         return NULL;
@@ -66,21 +58,23 @@ FILE *open_db(const char *filename) {
     return fp;
 }
 
-int write_sensor_data(FILE *fp, sensor_data_t *data) {
-    if (!fp || !data) return -1;
+int write_sensor_data(FILE *f, sensor_data_t *data) {
+    if (!f|| !data) {
+      return -1;
+    }
 
-    int result = fprintf(fp, "%d,%.2f,%ld\n",
-                        data->id, data->value, data->ts);
+    int result = fprintf(f, "%d,%.2f,%ld\n", data->id, data->value, data->ts);
 
-    if (result < 0) return -1;
+    if (result < 0) {
+        return -1;
+    }
 
-    fflush(fp);
+    fflush(f);
     return 0;
 }
 
-void close_db(FILE *fp) {
-    if (fp) {
+void close_db(FILE *f) {
+    if (f) {
         write_to_log_process("The data.csv file has been closed.");
-        fclose(fp);
     }
 }
